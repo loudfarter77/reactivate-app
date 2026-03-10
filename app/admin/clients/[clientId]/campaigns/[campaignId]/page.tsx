@@ -4,6 +4,8 @@ import { getSupabaseClient } from '@/lib/supabase'
 import { cn } from '@/lib/utils'
 import { buttonVariants } from '@/lib/button-variants'
 import { GenerateButton } from '@/components/admin/GenerateButton'
+import { FailedSendsList } from '@/components/admin/FailedSendsList'
+import { Separator } from '@/components/ui/separator'
 import { ChevronLeft, Zap } from 'lucide-react'
 
 const STATUS_STYLES: Record<string, string> = {
@@ -44,6 +46,19 @@ export default async function CampaignDetailPage({ params }: Props) {
 
   const leads = leadCount ?? 0
 
+  // Fetch unresolved failed sends with lead names
+  const { data: rawFailures } = await supabase
+    .from('send_failures')
+    .select('*, leads(name)')
+    .eq('campaign_id', campaignId)
+    .eq('resolved', false)
+    .order('created_at', { ascending: false })
+
+  const failures = (rawFailures ?? []).map((f) => ({
+    ...f,
+    leadName: (f.leads as { name: string } | null)?.name ?? 'Unknown lead',
+  }))
+
   return (
     <div className="space-y-8">
       {/* Breadcrumb */}
@@ -73,16 +88,15 @@ export default async function CampaignDetailPage({ params }: Props) {
           </div>
           <p className="text-sm text-muted-foreground capitalize">
             {campaign.channel} · {campaign.tone_preset} tone · {leads} leads
+            {failures.length > 0 && (
+              <span className="text-destructive ml-2">· {failures.length} failed</span>
+            )}
           </p>
         </div>
 
         {/* Action button varies by status */}
         {campaign.status === 'draft' && (
-          <GenerateButton
-            campaignId={campaignId}
-            clientId={clientId}
-            leadCount={leads}
-          />
+          <GenerateButton campaignId={campaignId} clientId={clientId} leadCount={leads} />
         )}
 
         {campaign.status === 'ready' && (
@@ -101,9 +115,9 @@ export default async function CampaignDetailPage({ params }: Props) {
           <Zap className="w-8 h-8 text-muted-foreground/40 mx-auto" />
           <p className="text-sm font-medium text-foreground">Ready to generate</p>
           <p className="text-xs text-muted-foreground max-w-sm mx-auto">
-            Click <strong>Generate sequences</strong> above to have Claude create personalised
-            email and SMS sequences for all {leads} leads. You&apos;ll review and edit everything
-            before anything is sent.
+            Click <strong>Generate sequences</strong> above to have Claude create personalised email
+            and SMS sequences for all {leads} leads. You&apos;ll review and edit everything before
+            anything is sent.
           </p>
         </div>
       )}
@@ -132,6 +146,14 @@ export default async function CampaignDetailPage({ params }: Props) {
           </div>
         ))}
       </div>
+
+      {/* Failed sends section — only shown when failures exist */}
+      {failures.length > 0 && (
+        <>
+          <Separator />
+          <FailedSendsList failures={failures} />
+        </>
+      )}
     </div>
   )
 }
