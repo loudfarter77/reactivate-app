@@ -13,10 +13,11 @@ const bookingSchema = z.object({
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: Promise<{ token: string }> }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { token } = await params
+    // `id` here is the lead's booking_token (public UUID from the email/SMS link)
+    const { id: token } = await params
 
     // 1. Validate input
     const body = await req.json()
@@ -85,7 +86,6 @@ export async function POST(
         )
       } catch (err) {
         // Non-fatal — log and continue without calendar event
-        // Booking is still saved in Supabase; admin can create event manually
         console.error('[leads/book] Google Calendar event creation failed:', err)
       }
     }
@@ -99,7 +99,7 @@ export async function POST(
         scheduled_at: slot_start,
         google_event_id: googleEventId,
         status: 'booked',
-        commission_owed: 0,  // Set when marked complete
+        commission_owed: 0,
       })
       .select()
       .single()
@@ -110,10 +110,7 @@ export async function POST(
     }
 
     // 6. Update lead status to "booked"
-    await supabase
-      .from('leads')
-      .update({ status: 'booked' })
-      .eq('id', lead.id)
+    await supabase.from('leads').update({ status: 'booked' }).eq('id', lead.id)
 
     // 7. Log event
     await supabase.from('lead_events').insert({
@@ -122,7 +119,7 @@ export async function POST(
       description: `Booked appointment for ${new Date(slot_start).toISOString()}`,
     })
 
-    // 8. Send booking confirmation to lead (if campaign.send_booking_confirmation = true)
+    // 8. Send booking confirmation to lead
     if (campaign?.send_booking_confirmation) {
       try {
         await sendBookingConfirmation({
@@ -133,12 +130,11 @@ export async function POST(
           leadToken: lead.booking_token,
         })
       } catch (err) {
-        // Non-fatal — log but don't fail the booking
         console.error('[leads/book] Confirmation email failed:', err)
       }
     }
 
-    // 9. Notify client of new booking (if campaign.notify_client = true)
+    // 9. Notify client of new booking
     if (campaign?.notify_client) {
       try {
         const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''

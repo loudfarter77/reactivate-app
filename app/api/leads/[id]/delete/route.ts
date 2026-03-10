@@ -4,7 +4,7 @@ import { getSupabaseClient } from '@/lib/supabase'
 
 export async function POST(
   _req: NextRequest,
-  { params }: { params: Promise<{ leadId: string }> }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const adminUserId = await getAdminUserId()
@@ -12,7 +12,8 @@ export async function POST(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { leadId } = await params
+    // `id` here is the lead's database UUID (the actual lead.id, not booking_token)
+    const { id: leadId } = await params
     const supabase = getSupabaseClient()
 
     // Verify lead exists
