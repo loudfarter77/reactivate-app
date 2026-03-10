@@ -1,0 +1,222 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { getAdminUserId } from '@/lib/auth'
+import { getSupabaseClient } from '@/lib/supabase'
+import { sendEmail, sendDelay } from '@/lib/gmail'
+
+// Allow up to 300 seconds on Vercel Pro
+// Note: 30–60s delay × leads means ~5–8 emails per invocation at max duration
+export const maxDuration = 300
+
+export async function POST(
+  _req: NextRequest,
+  { params }: { params: Promise<{ campaignId: string }> }
+) {
+  try {
+    // 1. Admin auth
+    const adminUserId = await getAdminUserId()
+    if (!adminUserId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const { campaignId } = await params
+    const supabase = getSupabaseClient()
+
+    // 2. Fetch campaign + client
+    const { data: campaign, error: campaignError } = await supabase
+      .from('campaigns')
+      .select('*, clients(name, email)')
+      .eq('id', campaignId)
+      .single()
+
+    if (campaignError || !campaign) {
+      return NextResponse.json({ error: 'Campaign not found' }, { status: 404 })
+    }
+
+    // 3. Campaign must be "ready" — admin must explicitly approve before sending
+    if (campaign.status !== 'ready') {
+      return NextResponse.json(
+        { error: `Cannot send: campaign status is "${campaign.status}" — must be "ready"` },
+        { status: 400 }
+      )
+    }
+
+    const clientData = campaign.clients as { name: string; email: string } | null
+    const clientEmail = clientData?.email ?? (process.env.GMAIL_USER ?? '')
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+
+    // 4. Count emails sent today (all campaigns) to enforce DAILY_SEND_LIMIT
+    const todayStart = new Date()
+    todayStart.setHours(0, 0, 0, 0)
+
+    const { count: sentToday } = await supabase
+      .from('emails')
+      .select('id', { count: 'exact', head: true })
+      .gte('sent_at', todayStart.toISOString())
+
+    const dailyLimit = parseInt(process.env.DAILY_SEND_LIMIT ?? '150', 10)
+    const remainingToday = Math.max(0, dailyLimit - (sentToday ?? 0))
+
+    if (remainingToday === 0) {
+      return NextResponse.json(
+        {
+          error: `Daily send limit of ${dailyLimit} reached. Remaining sends will be processed tomorrow.`,
+          sent: 0,
+          queued: 0,
+        },
+        { status: 429 }
+      )
+    }
+
+    // 5. Fetch pending leads (status: "pending") for this campaign
+    const { data: leads } = await supabase
+      .from('leads')
+      .select('id, name, email, booking_token, send_failure_count, email_opt_out, status')
+      .eq('campaign_id', campaignId)
+      .eq('status', 'pending')
+      .not('status', 'in', '(deleted,unsubscribed)')
+
+    if (!leads || leads.length === 0) {
+      // No pending leads — update campaign to active anyway
+      await supabase.from('campaigns').update({ status: 'active' }).eq('id', campaignId)
+      return NextResponse.json({ message: 'No pending leads — campaign set to active', sent: 0, queued: 0 })
+    }
+
+    // 6. Respect daily limit — process up to remainingToday leads
+    const maxSendRetries = parseInt(process.env.MAX_SEND_RETRIES ?? '3', 10)
+    const leadsToSend = leads.slice(0, remainingToday)
+    const leadsQueued = leads.length - leadsToSend.length
+
+    let sentCount = 0
+    let failedCount = 0
+
+    // 7. Send Email 1 to each eligible lead
+    for (const lead of leadsToSend) {
+      // ===== CAMPAIGN SAFETY CHECKS (AI_rules.md) =====
+      // Check 1: Fetch fresh campaign status — could have been paused mid-send
+      const { data: freshCampaign } = await supabase
+        .from('campaigns')
+        .select('status')
+        .eq('id', campaignId)
+        .single()
+
+      if (freshCampaign?.status === 'paused') {
+        console.log(`[send] Campaign ${campaignId} was paused mid-send — stopping`)
+        break
+      }
+
+      // Check 2: lead.email_opt_out must be false
+      if (lead.email_opt_out) {
+        console.log(`[send] Skipping lead ${lead.id} — opted out`)
+        continue
+      }
+
+      // Check 3: lead status must not be deleted or unsubscribed
+      if (lead.status === 'deleted' || lead.status === 'unsubscribed') {
+        continue
+      }
+
+      // Check 4: send_failure_count < MAX_SEND_RETRIES
+      if (lead.send_failure_count >= maxSendRetries) {
+        continue
+      }
+
+      // Check 5: lead must have an email address
+      if (!lead.email) {
+        continue
+      }
+
+      // Fetch Email 1 for this lead
+      const { data: email1 } = await supabase
+        .from('emails')
+        .select('id, subject, body')
+        .eq('lead_id', lead.id)
+        .eq('sequence_number', 1)
+        .single()
+
+      if (!email1) {
+        console.error(`[send] No Email 1 found for lead ${lead.id}`)
+        continue
+      }
+
+      const bookingUrl = `${appUrl}/book/${lead.booking_token}`
+
+      try {
+        await sendEmail({
+          to: lead.email,
+          subject: email1.subject,
+          body: email1.body,
+          bookingUrl,
+          replyTo: clientEmail,
+          emailId: email1.id,
+          leadToken: lead.booking_token,
+        })
+
+        // On success: record sent_at and update lead status
+        await Promise.all([
+          supabase
+            .from('emails')
+            .update({ sent_at: new Date().toISOString() })
+            .eq('id', email1.id),
+          supabase
+            .from('leads')
+            .update({ status: 'emailed' })
+            .eq('id', lead.id),
+        ])
+
+        // Log to lead_events
+        await supabase.from('lead_events').insert({
+          lead_id: lead.id,
+          event_type: 'email_sent',
+          description: `Email 1 sent to ${lead.email}`,
+        })
+
+        sentCount++
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        console.error(`[send] Failed to send Email 1 to lead ${lead.id}:`, message)
+
+        // Log failure
+        await supabase.from('send_failures').insert({
+          lead_id: lead.id,
+          campaign_id: campaignId,
+          channel: 'email',
+          sequence_number: 1,
+          error_message: message,
+          attempt_count: 1,
+          resolved: false,
+        })
+
+        // Increment failure counter
+        await supabase
+          .from('leads')
+          .update({ send_failure_count: lead.send_failure_count + 1 })
+          .eq('id', lead.id)
+
+        failedCount++
+      }
+
+      // Randomised delay between sends — required for Gmail deliverability
+      // 30–60 seconds per AI_rules.md
+      if (sentCount + failedCount < leadsToSend.length) {
+        await sendDelay()
+      }
+    }
+
+    // 8. Update campaign to "active" (even with partial sends)
+    await supabase.from('campaigns').update({ status: 'active' }).eq('id', campaignId)
+
+    return NextResponse.json({
+      success: true,
+      sent: sentCount,
+      failed: failedCount,
+      queued: leadsQueued,
+      message:
+        leadsQueued > 0
+          ? `${sentCount} sent, ${leadsQueued} queued for tomorrow (daily limit).`
+          : `${sentCount} sent successfully.`,
+    })
+  } catch (err) {
+    console.error('[send] Unexpected error:', err)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
+}
