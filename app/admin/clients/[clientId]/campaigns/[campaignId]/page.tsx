@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation'
 import { getSupabaseClient } from '@/lib/supabase'
 import { cn } from '@/lib/utils'
 import { buttonVariants } from '@/lib/button-variants'
-import { Badge } from '@/components/ui/badge'
+import { GenerateButton } from '@/components/admin/GenerateButton'
 import { ChevronLeft, Zap } from 'lucide-react'
 
 const STATUS_STYLES: Record<string, string> = {
@@ -42,6 +42,8 @@ export default async function CampaignDetailPage({ params }: Props) {
     .select('*', { count: 'exact', head: true })
     .eq('campaign_id', campaignId)
 
+  const leads = leadCount ?? 0
+
   return (
     <div className="space-y-8">
       {/* Breadcrumb */}
@@ -70,20 +72,17 @@ export default async function CampaignDetailPage({ params }: Props) {
             </span>
           </div>
           <p className="text-sm text-muted-foreground capitalize">
-            {campaign.channel} · {campaign.tone_preset} tone · {leadCount ?? 0} leads
+            {campaign.channel} · {campaign.tone_preset} tone · {leads} leads
           </p>
         </div>
 
-        {/* Generate button — active when status is draft */}
+        {/* Action button varies by status */}
         {campaign.status === 'draft' && (
-          <Link
-            href={`/api/campaigns/${campaignId}/generate`}
-            className={cn(buttonVariants())}
-            prefetch={false}
-          >
-            <Zap className="w-4 h-4 mr-2" />
-            Generate sequences
-          </Link>
+          <GenerateButton
+            campaignId={campaignId}
+            clientId={clientId}
+            leadCount={leads}
+          />
         )}
 
         {campaign.status === 'ready' && (
@@ -96,26 +95,36 @@ export default async function CampaignDetailPage({ params }: Props) {
         )}
       </div>
 
-      {/* Status-based call-to-action */}
+      {/* Status-based info panel */}
       {campaign.status === 'draft' && (
         <div className="rounded-lg border border-border p-6 text-center space-y-3">
           <Zap className="w-8 h-8 text-muted-foreground/40 mx-auto" />
           <p className="text-sm font-medium text-foreground">Ready to generate</p>
           <p className="text-xs text-muted-foreground max-w-sm mx-auto">
-            Click <strong>Generate sequences</strong> to have Claude create personalised email
-            and SMS sequences for all {leadCount ?? 0} leads. You&apos;ll be able to review and
-            edit everything before sending.
+            Click <strong>Generate sequences</strong> above to have Claude create personalised
+            email and SMS sequences for all {leads} leads. You&apos;ll review and edit everything
+            before anything is sent.
           </p>
         </div>
       )}
 
-      {/* Campaign metadata */}
+      {campaign.status === 'ready' && (
+        <div className="rounded-lg border border-blue-500/20 bg-blue-500/5 p-6 text-center space-y-3">
+          <p className="text-sm font-medium text-foreground">Sequences ready</p>
+          <p className="text-xs text-muted-foreground max-w-sm mx-auto">
+            All sequences have been generated. Click <strong>Preview &amp; send</strong> to review
+            and edit emails before approving the campaign.
+          </p>
+        </div>
+      )}
+
+      {/* Campaign metadata grid */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
           { label: 'Channel', value: campaign.channel.toUpperCase() },
           { label: 'Tone', value: campaign.tone_preset },
           { label: 'Consent basis', value: campaign.consent_basis },
-          { label: 'Leads', value: String(leadCount ?? 0) },
+          { label: 'Leads', value: String(leads) },
         ].map(({ label, value }) => (
           <div key={label} className="p-4 rounded-lg border border-border">
             <p className="text-xs text-muted-foreground">{label}</p>
