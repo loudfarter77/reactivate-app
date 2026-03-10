@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getSupabaseClient } from '@/lib/supabase'
-import { createBooking } from '@/lib/calendar'
+import { createBooking, isCalendarConfigured } from '@/lib/calendar'
 import { sendBookingConfirmation, sendClientBookingNotification } from '@/lib/gmail'
 
 const bookingSchema = z.object({
@@ -72,9 +72,9 @@ export async function POST(
       return NextResponse.json({ error: 'Client not found' }, { status: 404 })
     }
 
-    // 4. Create Google Calendar event
+    // 4. Create Google Calendar event (skipped gracefully if not configured)
     let googleEventId: string | null = null
-    if (client.google_calendar_id) {
+    if (client.google_calendar_id && isCalendarConfigured()) {
       try {
         googleEventId = await createBooking(
           client.google_calendar_id,
@@ -84,11 +84,9 @@ export async function POST(
           client.email
         )
       } catch (err) {
+        // Non-fatal — log and continue without calendar event
+        // Booking is still saved in Supabase; admin can create event manually
         console.error('[leads/book] Google Calendar event creation failed:', err)
-        return NextResponse.json(
-          { error: 'Failed to create calendar event. Please try again.' },
-          { status: 500 }
-        )
       }
     }
 

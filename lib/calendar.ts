@@ -13,20 +13,32 @@ export interface TimeSlot {
 // OAuth2 client factory (server-only)
 // ============================================================
 
-function getOAuth2Client() {
-  const clientId = process.env.GOOGLE_CLIENT_ID
-  const clientSecret = process.env.GOOGLE_CLIENT_SECRET
-  const redirectUri = process.env.GOOGLE_REDIRECT_URI
-  const refreshToken = process.env.GOOGLE_REFRESH_TOKEN
+/**
+ * Returns true only when all required Google Calendar env vars are present.
+ * Use this as a guard before any calendar operation — never let missing
+ * credentials throw an unhandled error into the request lifecycle.
+ */
+export function isCalendarConfigured(): boolean {
+  return !!(
+    process.env.GOOGLE_CLIENT_ID &&
+    process.env.GOOGLE_CLIENT_SECRET &&
+    process.env.GOOGLE_REFRESH_TOKEN
+  )
+}
 
-  if (!clientId || !clientSecret || !refreshToken) {
+function getOAuth2Client() {
+  if (!isCalendarConfigured()) {
     throw new Error(
-      'Missing Google Calendar env vars: GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REFRESH_TOKEN'
+      'Google Calendar is not configured — set GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and GOOGLE_REFRESH_TOKEN'
     )
   }
 
-  const auth = new google.auth.OAuth2(clientId, clientSecret, redirectUri)
-  auth.setCredentials({ refresh_token: refreshToken })
+  const auth = new google.auth.OAuth2(
+    process.env.GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_SECRET,
+    process.env.GOOGLE_REDIRECT_URI
+  )
+  auth.setCredentials({ refresh_token: process.env.GOOGLE_REFRESH_TOKEN })
   return auth
 }
 
@@ -40,6 +52,7 @@ export async function getAvailableSlots(
   calendarId: string,
   daysAhead = 14
 ): Promise<TimeSlot[]> {
+  if (!isCalendarConfigured()) return []  // graceful no-op when unconfigured
   const auth = getOAuth2Client()
   const calendar = google.calendar({ version: 'v3', auth })
 
