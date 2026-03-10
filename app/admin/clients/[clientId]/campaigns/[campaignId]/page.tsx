@@ -6,6 +6,7 @@ import { buttonVariants } from '@/lib/button-variants'
 import { GenerateButton } from '@/components/admin/GenerateButton'
 import { FailedSendsList } from '@/components/admin/FailedSendsList'
 import { CampaignBookings } from '@/components/admin/CampaignBookings'
+import { PauseResumeButton } from '@/components/admin/PauseResumeButton'
 import { Separator } from '@/components/ui/separator'
 import { ChevronLeft, Zap } from 'lucide-react'
 import type { Booking } from '@/lib/supabase'
@@ -129,6 +130,14 @@ export default async function CampaignDetailPage({ params }: Props) {
           >
             Preview &amp; send
           </Link>
+        )}
+
+        {/* Pause / Resume — shown for active and paused campaigns */}
+        {(campaign.status === 'active' || campaign.status === 'paused') && (
+          <PauseResumeButton
+            campaignId={campaignId}
+            currentStatus={campaign.status as 'active' | 'paused'}
+          />
         )}
       </div>
 
