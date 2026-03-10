@@ -13,6 +13,8 @@ const createClientSchema = z.object({
       message: 'Commission must be a non-negative number',
     }),
   google_calendar_id: z.string().max(500).nullable().optional(),
+  business_name: z.string().max(200).nullable().optional(),
+  business_address: z.string().max(500).nullable().optional(),
   notes: z.string().max(5000).nullable().optional(),
 })
 
@@ -34,7 +36,7 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const { name, email, commission_dollars, google_calendar_id, notes } = parsed.data
+    const { name, email, commission_dollars, google_calendar_id, business_name, business_address, notes } = parsed.data
 
     // Convert dollars to cents (store as integer)
     const commission_per_job = Math.round(parseFloat(commission_dollars) * 100)
@@ -60,6 +62,8 @@ export async function POST(req: NextRequest) {
         email,
         commission_per_job,
         google_calendar_id: google_calendar_id ?? null,
+        business_name: business_name ?? null,
+        business_address: business_address ?? null,
         notes: notes ?? null,
         clerk_org_id: clerkOrgId,
       })

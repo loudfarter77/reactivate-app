@@ -24,6 +24,8 @@ export function CreateClientForm() {
       email: (form.elements.namedItem('email') as HTMLInputElement).value.trim(),
       commission_dollars: (form.elements.namedItem('commission') as HTMLInputElement).value,
       google_calendar_id: (form.elements.namedItem('calendar') as HTMLInputElement).value.trim() || null,
+      business_name: (form.elements.namedItem('business_name') as HTMLInputElement).value.trim() || null,
+      business_address: (form.elements.namedItem('business_address') as HTMLTextAreaElement).value.trim() || null,
       notes: (form.elements.namedItem('notes') as HTMLTextAreaElement).value.trim() || null,
     }
 
@@ -70,6 +72,34 @@ export function CreateClientForm() {
               required
               disabled={loading}
             />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="business_name">Business name for emails</Label>
+            <Input
+              id="business_name"
+              name="business_name"
+              placeholder="e.g. Smith Plumbing Ltd (shown in email footers)"
+              disabled={loading}
+            />
+            <p className="text-xs text-muted-foreground">
+              The legal business name shown in every outgoing email footer. Defaults to the name above if left blank.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="business_address">Business address *</Label>
+            <Textarea
+              id="business_address"
+              name="business_address"
+              placeholder="e.g. 12 High Street, London, EC1A 1BB"
+              rows={2}
+              disabled={loading}
+              className="resize-none"
+            />
+            <p className="text-xs text-muted-foreground">
+              Required for CAN-SPAM / GDPR legal compliance — included in every email footer.
+            </p>
           </div>
 
           <div className="space-y-2">

@@ -7,11 +7,15 @@ import nodemailer from 'nodemailer'
 export interface SendEmailOptions {
   to: string
   subject: string
-  body: string          // Plain text from Claude — may contain [BOOKING_LINK]
-  bookingUrl: string    // Replaces [BOOKING_LINK] placeholder
-  replyTo: string       // Client's contact email — lead replies go here
-  emailId: string       // For the tracking pixel
-  leadToken: string     // lead.booking_token — used in unsubscribe URL
+  body: string                   // Plain text from Claude — may contain [BOOKING_LINK]
+  bookingUrl: string             // Replaces [BOOKING_LINK] placeholder
+  replyTo: string                // Client's contact email — lead replies go here
+  emailId: string                // For the tracking pixel
+  leadToken: string              // lead.booking_token — used in unsubscribe URL
+  // Client business details for email footer (legal compliance)
+  // These are shown in the footer instead of the agency env vars
+  clientBusinessName?: string    // Falls back to AGENCY_NAME env var
+  clientBusinessAddress?: string // Falls back to AGENCY_ADDRESS env var
 }
 
 // ============================================================
@@ -41,11 +45,14 @@ function buildHtmlEmail(
   body: string,
   bookingUrl: string,
   emailId: string,
-  leadToken: string
+  leadToken: string,
+  clientBusinessName?: string,
+  clientBusinessAddress?: string
 ): string {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
-  const agencyName = process.env.AGENCY_NAME ?? 'Reactivate Agency'
-  const agencyAddress = process.env.AGENCY_ADDRESS ?? ''
+  // Client business details take priority — agency env vars are fallback only
+  const agencyName = clientBusinessName ?? process.env.AGENCY_NAME ?? 'Reactivate Agency'
+  const agencyAddress = clientBusinessAddress ?? process.env.AGENCY_ADDRESS ?? ''
   const unsubscribeUrl = `${appUrl}/unsubscribe/${leadToken}`
   const trackingPixelUrl = `${appUrl}/api/track/open/${emailId}`
 
@@ -92,10 +99,16 @@ function buildHtmlEmail(
 // Plain text builder (fallback / List-Unsubscribe)
 // ============================================================
 
-function buildPlainText(body: string, bookingUrl: string, leadToken: string): string {
+function buildPlainText(
+  body: string,
+  bookingUrl: string,
+  leadToken: string,
+  clientBusinessName?: string,
+  clientBusinessAddress?: string
+): string {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
-  const agencyName = process.env.AGENCY_NAME ?? 'Reactivate Agency'
-  const agencyAddress = process.env.AGENCY_ADDRESS ?? ''
+  const agencyName = clientBusinessName ?? process.env.AGENCY_NAME ?? 'Reactivate Agency'
+  const agencyAddress = clientBusinessAddress ?? process.env.AGENCY_ADDRESS ?? ''
   const unsubscribeUrl = `${appUrl}/unsubscribe/${leadToken}`
 
   const bodyWithBooking = body.replace(/\[BOOKING_LINK\]/g, bookingUrl)
@@ -115,7 +128,17 @@ Privacy: ${appUrl}/privacy`
 // ============================================================
 
 export async function sendEmail(options: SendEmailOptions): Promise<void> {
-  const { to, subject, body, bookingUrl, replyTo, emailId, leadToken } = options
+  const {
+    to,
+    subject,
+    body,
+    bookingUrl,
+    replyTo,
+    emailId,
+    leadToken,
+    clientBusinessName,
+    clientBusinessAddress,
+  } = options
 
   const transport = getTransport()
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
@@ -126,10 +149,9 @@ export async function sendEmail(options: SendEmailOptions): Promise<void> {
     to,
     subject,
     replyTo,
-    text: buildPlainText(body, bookingUrl, leadToken),
-    html: buildHtmlEmail(body, bookingUrl, emailId, leadToken),
+    text: buildPlainText(body, bookingUrl, leadToken, clientBusinessName, clientBusinessAddress),
+    html: buildHtmlEmail(body, bookingUrl, emailId, leadToken, clientBusinessName, clientBusinessAddress),
     headers: {
-      // Encourages email clients to show unsubscribe button (deliverability best practice)
       'List-Unsubscribe': `<${unsubscribeUrl}>`,
       'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
     },

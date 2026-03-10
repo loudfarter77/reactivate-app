@@ -61,6 +61,8 @@ export type Client = {
   clerk_org_id: string | null
   commission_per_job: number
   google_calendar_id: string | null
+  business_name: string | null     // Used in email footers; falls back to name if null
+  business_address: string | null  // Postal address for legal email footer compliance
   notes: string | null
   created_at: string
 }

@@ -17,6 +17,8 @@ CREATE TABLE IF NOT EXISTS clients (
   clerk_org_id        TEXT UNIQUE,
   commission_per_job  INTEGER NOT NULL DEFAULT 0,  -- flat fee in cents
   google_calendar_id  TEXT,
+  business_name       TEXT,     -- Public name shown in email footers; falls back to name if null
+  business_address    TEXT,     -- Postal address for CAN-SPAM / GDPR footer compliance
   notes               TEXT,
   created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

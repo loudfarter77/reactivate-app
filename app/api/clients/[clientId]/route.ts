@@ -9,6 +9,8 @@ const updateClientSchema = z.object({
   commission_per_job: z.number().int().min(0).optional(),
   name: z.string().min(1).max(200).optional(),
   email: z.string().email().optional(),
+  business_name: z.string().max(200).nullable().optional(),
+  business_address: z.string().max(500).nullable().optional(),
 })
 
 export async function PATCH(
@@ -41,6 +43,8 @@ export async function PATCH(
     if (parsed.data.commission_per_job !== undefined) updateData.commission_per_job = parsed.data.commission_per_job
     if (parsed.data.name !== undefined) updateData.name = parsed.data.name
     if (parsed.data.email !== undefined) updateData.email = parsed.data.email
+    if (parsed.data.business_name !== undefined) updateData.business_name = parsed.data.business_name
+    if (parsed.data.business_address !== undefined) updateData.business_address = parsed.data.business_address
 
     const supabase = getSupabaseClient()
     const { data: client, error } = await supabase

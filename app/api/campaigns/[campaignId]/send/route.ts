@@ -21,10 +21,10 @@ export async function POST(
     const { campaignId } = await params
     const supabase = getSupabaseClient()
 
-    // 2. Fetch campaign + client
+    // 2. Fetch campaign + client (include business_name + business_address for email footer)
     const { data: campaign, error: campaignError } = await supabase
       .from('campaigns')
-      .select('*, clients(name, email)')
+      .select('*, clients(name, email, business_name, business_address)')
       .eq('id', campaignId)
       .single()
 
@@ -40,8 +40,16 @@ export async function POST(
       )
     }
 
-    const clientData = campaign.clients as { name: string; email: string } | null
+    const clientData = campaign.clients as {
+      name: string
+      email: string
+      business_name: string | null
+      business_address: string | null
+    } | null
     const clientEmail = clientData?.email ?? (process.env.GMAIL_USER ?? '')
+    // Use client's business details for email footer — fall back to env vars if not set
+    const clientBusinessName = clientData?.business_name ?? clientData?.name ?? undefined
+    const clientBusinessAddress = clientData?.business_address ?? undefined
     const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
 
     // 4. Count emails sent today (all campaigns) to enforce DAILY_SEND_LIMIT
@@ -149,6 +157,8 @@ export async function POST(
           replyTo: clientEmail,
           emailId: email1.id,
           leadToken: lead.booking_token,
+          clientBusinessName,
+          clientBusinessAddress,
         })
 
         // On success: record sent_at and update lead status
