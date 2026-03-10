@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseClient } from '@/lib/supabase'
 import { sendEmail, sendDelay } from '@/lib/gmail'
-import type { Email, Lead } from '@/lib/supabase'
+import { sendSms, isTwilioConfigured } from '@/lib/twilio'
+import type { Email, Lead, SmsMessage } from '@/lib/supabase'
 
 // Allow up to 300 seconds — cron processes all active campaigns in one run
 export const maxDuration = 300
@@ -45,12 +46,11 @@ export async function POST(req: NextRequest) {
     })
   }
 
-  // Fetch all ACTIVE campaigns with email channel (skip paused, draft, complete)
+  // Fetch all ACTIVE campaigns with any channel (email, sms, or both)
   const { data: campaigns, error: campaignsError } = await supabase
     .from('campaigns')
     .select('*, clients(name, email, business_name, business_address)')
     .eq('status', 'active')
-    .in('channel', ['email', 'both'])
 
   if (campaignsError) {
     console.error('[cron/follow-up] Failed to fetch campaigns:', campaignsError.message)
@@ -83,21 +83,30 @@ export async function POST(req: NextRequest) {
     const clientBusinessName = clientData?.business_name ?? clientData?.name ?? undefined
     const clientBusinessAddress = clientData?.business_address ?? undefined
 
-    // Fetch leads eligible for follow-up: "emailed" (Email 2/3) or "clicked" (Email 4)
+    const hasEmail = campaign.channel === 'email' || campaign.channel === 'both'
+    const hasSms = campaign.channel === 'sms' || campaign.channel === 'both'
+
+    // Fetch leads eligible for follow-up
+    // emailed/sms_sent: Email 2/3 or SMS 2/3; clicked: Email 4 / SMS 4
     const { data: leads } = await supabase
       .from('leads')
-      .select('id, name, email, booking_token, status, email_opt_out, send_failure_count')
+      .select('id, name, email, phone, booking_token, status, email_opt_out, sms_opt_out, send_failure_count')
       .eq('campaign_id', campaign.id)
-      .in('status', ['emailed', 'clicked'])
-      .eq('email_opt_out', false)
+      .in('status', ['emailed', 'sms_sent', 'clicked'])
 
     if (!leads || leads.length === 0) continue
 
     const leadIds = leads.map((l) => l.id)
 
-    // Fetch all emails for these leads in one query
+    // Fetch all emails and SMS for these leads in one query each
     const { data: allEmails } = await supabase
       .from('emails')
+      .select('*')
+      .in('lead_id', leadIds)
+      .order('sequence_number', { ascending: true })
+
+    const { data: allSms } = await supabase
+      .from('sms_messages')
       .select('*')
       .in('lead_id', leadIds)
       .order('sequence_number', { ascending: true })
@@ -117,6 +126,13 @@ export async function POST(req: NextRequest) {
       emailsByLead.get(email.lead_id)![email.sequence_number] = email as Email
     }
 
+    // Group SMS by lead_id → sequence_number
+    const smsByLead = new Map<string, Record<number, SmsMessage>>()
+    for (const sms of allSms ?? []) {
+      if (!smsByLead.has(sms.lead_id)) smsByLead.set(sms.lead_id, {})
+      smsByLead.get(sms.lead_id)![sms.sequence_number] = sms as SmsMessage
+    }
+
     // Most recent click timestamp per lead
     const lastClickByLead = new Map<string, number>()
     for (const event of clickEvents ?? []) {
@@ -134,7 +150,10 @@ export async function POST(req: NextRequest) {
       if (lead.email_opt_out) continue
       if (lead.status === 'deleted' || lead.status === 'unsubscribed') continue
       if (lead.send_failure_count >= maxSendRetries) continue
-      if (!lead.email) continue
+      // Need at least one valid contact method for the campaign's channel
+      if (hasEmail && !lead.email) continue
+      if (hasSms && !lead.phone) continue
+      if (!hasEmail && !hasSms) continue
 
       const emails = emailsByLead.get(lead.id) ?? {}
       const email1 = emails[1]
@@ -183,61 +202,73 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      if (!emailToSend || !sequenceNumber) continue
+      // Skip if nothing to send this run
+      if (!emailToSend && !sequenceNumber) continue
 
       const bookingUrl = `${appUrl}/book/${lead.booking_token}`
+      const now2 = new Date().toISOString()
 
-      try {
-        await sendEmail({
-          to: lead.email!,
-          subject: emailToSend.subject,
-          body: emailToSend.body,
-          bookingUrl,
-          replyTo: clientEmail,
-          emailId: emailToSend.id,
-          leadToken: lead.booking_token,
-          clientBusinessName,
-          clientBusinessAddress,
-        })
+      // Send email follow-up
+      if (hasEmail && emailToSend && sequenceNumber && lead.email && !lead.email_opt_out) {
+        try {
+          await sendEmail({
+            to: lead.email,
+            subject: emailToSend.subject,
+            body: emailToSend.body,
+            bookingUrl,
+            replyTo: clientEmail,
+            emailId: emailToSend.id,
+            leadToken: lead.booking_token,
+            clientBusinessName,
+            clientBusinessAddress,
+          })
+          await supabase.from('emails').update({ sent_at: now2 }).eq('id', emailToSend.id)
+          await supabase.from('lead_events').insert({
+            lead_id: lead.id,
+            event_type: 'email_sent',
+            description: `Email ${sequenceNumber} sent (follow-up cron)`,
+          })
+          totalSent++
+          remainingToday--
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err)
+          console.error(`[cron/follow-up] Email ${sequenceNumber} failed for lead ${lead.id}:`, message)
+          await supabase.from('send_failures').insert({
+            lead_id: lead.id, campaign_id: campaign.id, channel: 'email',
+            sequence_number: sequenceNumber, error_message: message, attempt_count: 1, resolved: false,
+          })
+          await supabase.from('leads').update({ send_failure_count: (lead.send_failure_count ?? 0) + 1 }).eq('id', lead.id)
+          totalFailed++
+        }
+      }
 
-        // Record sent_at
-        await supabase
-          .from('emails')
-          .update({ sent_at: new Date().toISOString() })
-          .eq('id', emailToSend.id)
-
-        // Log event
-        await supabase.from('lead_events').insert({
-          lead_id: lead.id,
-          event_type: 'email_sent',
-          description: `Email ${sequenceNumber} sent (follow-up cron)`,
-        })
-
-        totalSent++
-        remainingToday--
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err)
-        console.error(
-          `[cron/follow-up] Failed to send Email ${sequenceNumber} to lead ${lead.id}:`,
-          message
-        )
-
-        await supabase.from('send_failures').insert({
-          lead_id: lead.id,
-          campaign_id: campaign.id,
-          channel: 'email',
-          sequence_number: sequenceNumber,
-          error_message: message,
-          attempt_count: 1,
-          resolved: false,
-        })
-
-        await supabase
-          .from('leads')
-          .update({ send_failure_count: (lead.send_failure_count ?? 0) + 1 })
-          .eq('id', lead.id)
-
-        totalFailed++
+      // Send SMS follow-up (same sequence number, same timing rules)
+      if (hasSms && sequenceNumber && lead.phone && !lead.sms_opt_out && isTwilioConfigured()) {
+        const smsMap = smsByLead.get(lead.id) ?? {}
+        const smsToSend = smsMap[sequenceNumber]
+        if (smsToSend && !smsToSend.sent_at) {
+          try {
+            await sendSms(lead.phone, smsToSend.body, bookingUrl)
+            await supabase.from('sms_messages').update({ sent_at: now2 }).eq('id', smsToSend.id)
+            await supabase.from('lead_events').insert({
+              lead_id: lead.id,
+              event_type: 'sms_sent',
+              description: `SMS ${sequenceNumber} sent (follow-up cron)`,
+            })
+            if (!hasEmail) { totalSent++; remainingToday-- }  // Count SMS-only sends
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err)
+            console.error(`[cron/follow-up] SMS ${sequenceNumber} failed for lead ${lead.id}:`, message)
+            await supabase.from('send_failures').insert({
+              lead_id: lead.id, campaign_id: campaign.id, channel: 'sms',
+              sequence_number: sequenceNumber, error_message: message, attempt_count: 1, resolved: false,
+            })
+            if (!hasEmail) {
+              await supabase.from('leads').update({ send_failure_count: (lead.send_failure_count ?? 0) + 1 }).eq('id', lead.id)
+              totalFailed++
+            }
+          }
+        }
       }
 
       // Randomised delay between sends (30–60 seconds, AI_rules.md requirement)

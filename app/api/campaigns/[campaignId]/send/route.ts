@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getAdminUserId } from '@/lib/auth'
 import { getSupabaseClient } from '@/lib/supabase'
 import { sendEmail, sendDelay } from '@/lib/gmail'
+import { sendSms, isTwilioConfigured } from '@/lib/twilio'
 
 // Allow up to 300 seconds on Vercel Pro
 // Note: 30–60s delay × leads means ~5–8 emails per invocation at max duration
@@ -51,6 +52,7 @@ export async function POST(
     const clientBusinessName = clientData?.business_name ?? clientData?.name ?? undefined
     const clientBusinessAddress = clientData?.business_address ?? undefined
     const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+    const channel = campaign.channel as 'email' | 'sms' | 'both'
 
     // 4. Count emails sent today (all campaigns) to enforce DAILY_SEND_LIMIT
     const todayStart = new Date()
@@ -78,7 +80,7 @@ export async function POST(
     // 5. Fetch pending leads (status: "pending") for this campaign
     const { data: leads } = await supabase
       .from('leads')
-      .select('id, name, email, booking_token, send_failure_count, email_opt_out, status')
+      .select('id, name, email, phone, booking_token, send_failure_count, email_opt_out, sms_opt_out, status')
       .eq('campaign_id', campaignId)
       .eq('status', 'pending')
       .not('status', 'in', '(deleted,unsubscribed)')
@@ -128,59 +130,80 @@ export async function POST(
         continue
       }
 
-      // Check 5: lead must have an email address
-      if (!lead.email) {
-        continue
-      }
+      const hasEmail = channel === 'email' || channel === 'both'
+      const hasSms = channel === 'sms' || channel === 'both'
 
-      // Fetch Email 1 for this lead
-      const { data: email1 } = await supabase
-        .from('emails')
-        .select('id, subject, body')
-        .eq('lead_id', lead.id)
-        .eq('sequence_number', 1)
-        .single()
-
-      if (!email1) {
-        console.error(`[send] No Email 1 found for lead ${lead.id}`)
-        continue
-      }
+      // Check 5: lead must have required contact details for the channel
+      if (hasEmail && !lead.email) continue
+      if (hasSms && !lead.phone) continue
+      // Also check SMS opt-out for SMS-enabled campaigns
+      if (hasSms && lead.sms_opt_out) continue
 
       const bookingUrl = `${appUrl}/book/${lead.booking_token}`
+      const now = new Date().toISOString()
 
       try {
-        await sendEmail({
-          to: lead.email,
-          subject: email1.subject,
-          body: email1.body,
-          bookingUrl,
-          replyTo: clientEmail,
-          emailId: email1.id,
-          leadToken: lead.booking_token,
-          clientBusinessName,
-          clientBusinessAddress,
-        })
+        let emailSent = false
+        let smsSent = false
 
-        // On success: record sent_at and update lead status
-        await Promise.all([
-          supabase
+        // Send Email 1 (if channel includes email)
+        if (hasEmail && lead.email) {
+          const { data: email1 } = await supabase
             .from('emails')
-            .update({ sent_at: new Date().toISOString() })
-            .eq('id', email1.id),
-          supabase
-            .from('leads')
-            .update({ status: 'emailed' })
-            .eq('id', lead.id),
-        ])
+            .select('id, subject, body')
+            .eq('lead_id', lead.id)
+            .eq('sequence_number', 1)
+            .single()
 
-        // Log to lead_events
-        await supabase.from('lead_events').insert({
-          lead_id: lead.id,
-          event_type: 'email_sent',
-          description: `Email 1 sent to ${lead.email}`,
-        })
+          if (email1) {
+            await sendEmail({
+              to: lead.email,
+              subject: email1.subject,
+              body: email1.body,
+              bookingUrl,
+              replyTo: clientEmail,
+              emailId: email1.id,
+              leadToken: lead.booking_token,
+              clientBusinessName,
+              clientBusinessAddress,
+            })
+            await supabase.from('emails').update({ sent_at: now }).eq('id', email1.id)
+            await supabase.from('lead_events').insert({
+              lead_id: lead.id,
+              event_type: 'email_sent',
+              description: `Email 1 sent to ${lead.email}`,
+            })
+            emailSent = true
+          }
+        }
 
-        sentCount++
+        // Send SMS 1 (if channel includes SMS and Twilio is configured)
+        if (hasSms && lead.phone && isTwilioConfigured()) {
+          const { data: sms1 } = await supabase
+            .from('sms_messages')
+            .select('id, body')
+            .eq('lead_id', lead.id)
+            .eq('sequence_number', 1)
+            .single()
+
+          if (sms1) {
+            await sendSms(lead.phone, sms1.body, bookingUrl)
+            await supabase.from('sms_messages').update({ sent_at: now }).eq('id', sms1.id)
+            await supabase.from('lead_events').insert({
+              lead_id: lead.id,
+              event_type: 'sms_sent',
+              description: `SMS 1 sent to ${lead.phone}`,
+            })
+            smsSent = true
+          }
+        }
+
+        // Update lead status based on what was sent
+        if (emailSent || smsSent) {
+          const newStatus = emailSent ? 'emailed' : 'sms_sent'
+          await supabase.from('leads').update({ status: newStatus }).eq('id', lead.id)
+          sentCount++
+        }
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err)
         console.error(`[send] Failed to send Email 1 to lead ${lead.id}:`, message)
