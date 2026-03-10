@@ -60,6 +60,29 @@ function extractJsonFromText(text: string): string {
 // generateEmailSequence
 // ============================================================
 
+/** Optional enrichment fields about a lead — all nullable */
+export interface LeadContext {
+  name: string
+  last_contact_date?: string | null
+  service_type?: string | null
+  purchase_value?: string | null
+  notes?: string | null
+}
+
+/**
+ * Builds an optional context block injected into the Claude prompt.
+ * Only includes fields that are non-blank — never adds empty lines.
+ */
+function buildLeadContextBlock(lead: LeadContext): string {
+  const lines: string[] = []
+  if (lead.last_contact_date) lines.push(`- Last contact date: ${lead.last_contact_date}`)
+  if (lead.service_type) lines.push(`- Previous service type: ${lead.service_type}`)
+  if (lead.purchase_value) lines.push(`- Previous job value: ${lead.purchase_value}`)
+  if (lead.notes) lines.push(`- Notes: ${lead.notes}`)
+  if (lines.length === 0) return ''
+  return `\n\nAdditional context about this lead (reference naturally where relevant — don't repeat all fields verbatim):\n${lines.join('\n')}`
+}
+
 /**
  * Generates a personalised 4-email reactivation sequence for a lead.
  * Server-side only — never import this in client components.
@@ -67,7 +90,7 @@ function extractJsonFromText(text: string): string {
  * Returns exactly 4 { subject, body } objects or throws.
  */
 export async function generateEmailSequence(
-  lead: { name: string },
+  lead: LeadContext,
   clientBusiness: string,
   tonePreset: string,
   toneCustom: string | null,
@@ -76,12 +99,13 @@ export async function generateEmailSequence(
   const client = getClient()
   const tone = buildToneClause(tonePreset, toneCustom)
   const instructions = buildInstructionsBlock(customInstructions)
+  const leadContext = buildLeadContextBlock(lead)
 
   const prompt = `You are a copywriter crafting personalised reactivation emails for a small business.
 
 Lead name: ${lead.name}
 Business name: ${clientBusiness}
-Tone: ${tone}${instructions}
+Tone: ${tone}${leadContext}${instructions}
 
 Write exactly 4 emails with distinct purposes:
 - Email 1: Initial reactivation — warm re-introduction, acknowledge the time since last contact, easy CTA with booking link
@@ -149,7 +173,7 @@ Format: [{"subject":"...","body":"..."},{"subject":"...","body":"..."},{"subject
  * Each body is guaranteed ≤ 160 characters.
  */
 export async function generateSmsSequence(
-  lead: { name: string },
+  lead: LeadContext,
   clientBusiness: string,
   tonePreset: string,
   toneCustom: string | null,
@@ -158,12 +182,13 @@ export async function generateSmsSequence(
   const client = getClient()
   const tone = buildToneClause(tonePreset, toneCustom)
   const instructions = buildInstructionsBlock(customInstructions)
+  const leadContext = buildLeadContextBlock(lead)
 
   const prompt = `You are writing personalised SMS reactivation messages for a small business.
 
 Lead name: ${lead.name}
 Business name: ${clientBusiness}
-Tone: ${tone}${instructions}
+Tone: ${tone}${leadContext}${instructions}
 
 Write exactly 4 SMS messages:
 - SMS 1: Initial reactivation — short, personal, include booking link

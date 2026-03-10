@@ -41,7 +41,7 @@ export async function POST(
     // 3. Fetch all leads for this campaign
     const { data: leads, error: leadsError } = await supabase
       .from('leads')
-      .select('id, name, email, phone')
+      .select('id, name, email, phone, last_contact_date, service_type, purchase_value, notes')
       .eq('campaign_id', campaignId)
       .not('status', 'in', '(deleted)')
 
@@ -65,10 +65,19 @@ export async function POST(
         const emailInserts: object[] = []
         const smsInserts: object[] = []
 
+        // Build lead context (enrichment fields only included if non-blank)
+        const leadContext = {
+          name: lead.name,
+          last_contact_date: lead.last_contact_date ?? undefined,
+          service_type: lead.service_type ?? undefined,
+          purchase_value: lead.purchase_value ?? undefined,
+          notes: lead.notes ?? undefined,
+        }
+
         // Generate email sequence
         if (channel === 'email' || channel === 'both') {
           const emails = await generateEmailSequence(
-            { name: lead.name },
+            leadContext,
             clientName,
             tone_preset,
             tone_custom,
@@ -87,7 +96,7 @@ export async function POST(
         // Generate SMS sequence
         if (channel === 'sms' || channel === 'both') {
           const smsList = await generateSmsSequence(
-            { name: lead.name },
+            leadContext,
             clientName,
             tone_preset,
             tone_custom,

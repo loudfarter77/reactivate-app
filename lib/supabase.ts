@@ -117,6 +117,10 @@ export type Lead = {
   sms_opt_out: boolean
   email_opt_out: boolean
   send_failure_count: number
+  last_contact_date: string | null
+  service_type: string | null
+  purchase_value: string | null
+  notes: string | null
   created_at: string
 }
 

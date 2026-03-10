@@ -160,6 +160,21 @@ export function CsvUploader({ channel, onParsed }: CsvUploaderProps) {
               {result.duplicatesRemoved} duplicate{result.duplicatesRemoved !== 1 ? 's' : ''} removed within CSV.
             </p>
           )}
+
+          {/* Optional enrichment columns detected */}
+          {result.detectedOptionalColumns.length > 0 && (
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-xs text-muted-foreground">Enrichment columns detected:</span>
+              {result.detectedOptionalColumns.map((col) => (
+                <span
+                  key={col}
+                  className="inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-blue-500/10 text-blue-600 dark:text-blue-400 font-mono"
+                >
+                  {col}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

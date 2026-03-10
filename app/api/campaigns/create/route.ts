@@ -7,6 +7,11 @@ const leadSchema = z.object({
   name: z.string().min(1).max(200),
   email: z.string().email().optional(),
   phone: z.string().min(7).max(20).optional(),
+  // Optional enrichment columns — accepted if present, never required
+  last_contact_date: z.string().max(100).optional().nullable(),
+  service_type: z.string().max(200).optional().nullable(),
+  purchase_value: z.string().max(100).optional().nullable(),
+  notes: z.string().max(2000).optional().nullable(),
 })
 
 const createCampaignSchema = z.object({
@@ -160,6 +165,10 @@ export async function POST(req: NextRequest) {
       email: lead.email ?? null,
       phone: lead.phone ?? null,
       status: 'pending' as const,
+      last_contact_date: lead.last_contact_date ?? null,
+      service_type: lead.service_type ?? null,
+      purchase_value: lead.purchase_value ?? null,
+      notes: lead.notes ?? null,
     }))
 
     const { error: leadsError } = await supabase.from('leads').insert(leadRows)

@@ -5,6 +5,11 @@ export interface ParsedLead {
   name: string
   email?: string
   phone?: string
+  // Optional enrichment columns — never cause a validation error if blank
+  last_contact_date?: string
+  service_type?: string
+  purchase_value?: string
+  notes?: string
 }
 
 export interface CsvParseResult {
@@ -12,6 +17,8 @@ export interface CsvParseResult {
   errors: string[]
   duplicatesRemoved: number
   totalRows: number
+  /** Which optional enrichment columns were detected in this CSV */
+  detectedOptionalColumns: string[]
 }
 
 const MAX_ROWS = 1000
@@ -28,9 +35,29 @@ function normalizeValue(v: unknown): string {
   return typeof v === 'string' ? v.trim() : ''
 }
 
+/** Pick the first non-empty value from a list of column name variants */
+function pick(row: Record<string, string>, ...keys: string[]): string {
+  for (const k of keys) {
+    const v = (row[k] ?? '').trim()
+    if (v) return v
+  }
+  return ''
+}
+
+// Optional column canonical name → accepted header variants
+const OPTIONAL_COLUMN_VARIANTS: Record<string, string[]> = {
+  last_contact_date: ['last_contact_date', 'last_contact', 'last_service_date', 'last_service'],
+  service_type: ['service_type', 'service', 'type', 'job_type'],
+  purchase_value: ['purchase_value', 'value', 'amount', 'job_value', 'price'],
+  notes: ['notes', 'note', 'comments', 'additional_notes', 'description'],
+}
+
 /**
  * Parses a CSV string into validated leads.
  * Works in both browser and Node.js (PapaParse supports both).
+ *
+ * Required: name, email (email channel), phone (SMS channel)
+ * Optional (never error if blank): last_contact_date, service_type, purchase_value, notes
  */
 export function parseLeadsCsv(
   csvContent: string,
@@ -62,13 +89,19 @@ export function parseLeadsCsv(
 
   const rowsToProcess = result.data.slice(0, MAX_ROWS)
 
+  // Detect which optional columns are present in the headers
+  const headers = result.meta.fields ?? []
+  const detectedOptionalColumns = Object.entries(OPTIONAL_COLUMN_VARIANTS)
+    .filter(([, variants]) => variants.some((v) => headers.includes(v)))
+    .map(([canonical]) => canonical)
+
   rowsToProcess.forEach((row, i) => {
     const rowNum = i + 2 // 1-indexed + header row
 
-    // Accept common column name variants
-    const name = (row.name ?? row.full_name ?? row.first_name ?? '').trim()
-    const email = (row.email ?? row.email_address ?? '').trim().toLowerCase()
-    const phone = (row.phone ?? row.phone_number ?? row.mobile ?? row.telephone ?? '').trim()
+    // Accept common column name variants for required fields
+    const name = pick(row, 'name', 'full_name', 'first_name')
+    const email = pick(row, 'email', 'email_address').toLowerCase()
+    const phone = pick(row, 'phone', 'phone_number', 'mobile', 'telephone')
 
     if (!name) {
       errors.push(`Row ${rowNum}: missing name`)
@@ -116,10 +149,20 @@ export function parseLeadsCsv(
     if (email) seenEmails.add(email)
     if (phone) seenPhones.add(phone)
 
+    // Extract optional enrichment columns — never error if blank
+    const last_contact_date = pick(row, 'last_contact_date', 'last_contact', 'last_service_date', 'last_service') || undefined
+    const service_type = pick(row, 'service_type', 'service', 'type', 'job_type') || undefined
+    const purchase_value = pick(row, 'purchase_value', 'value', 'amount', 'job_value', 'price') || undefined
+    const notes = pick(row, 'notes', 'note', 'comments', 'additional_notes', 'description') || undefined
+
     validLeads.push({
       name,
       email: email || undefined,
       phone: phone || undefined,
+      last_contact_date,
+      service_type,
+      purchase_value,
+      notes,
     })
   })
 
@@ -128,5 +171,6 @@ export function parseLeadsCsv(
     errors,
     duplicatesRemoved,
     totalRows,
+    detectedOptionalColumns,
   }
 }
