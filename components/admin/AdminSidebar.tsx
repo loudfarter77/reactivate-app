@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { SignOutButton, useUser } from '@clerk/nextjs'
 import { cn } from '@/lib/utils'
 import {
   LayoutDashboard,
@@ -11,6 +12,7 @@ import {
   CreditCard,
   Settings,
   Zap,
+  LogOut,
 } from 'lucide-react'
 
 const navItems = [
@@ -24,6 +26,7 @@ const navItems = [
 
 export function AdminSidebar() {
   const pathname = usePathname()
+  const { user } = useUser()
 
   function isActive(href: string, exact: boolean) {
     if (exact) return pathname === href
@@ -64,9 +67,22 @@ export function AdminSidebar() {
         })}
       </nav>
 
-      {/* Footer */}
-      <div className="px-5 py-4 border-t border-sidebar-border shrink-0">
-        <p className="text-xs text-sidebar-foreground/40">Admin Portal</p>
+      {/* Footer with user info + sign out */}
+      <div className="px-3 py-4 border-t border-sidebar-border shrink-0 space-y-3">
+        {user && (
+          <div className="px-2 space-y-0.5">
+            <p className="text-xs font-medium text-sidebar-foreground truncate">
+              {user.primaryEmailAddress?.emailAddress}
+            </p>
+            <p className="text-xs text-sidebar-foreground/40">Admin</p>
+          </div>
+        )}
+        <SignOutButton redirectUrl="/sign-in">
+          <button className="flex w-full items-center gap-3 px-3 py-2 rounded-md text-sm font-medium text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent/50 transition-colors">
+            <LogOut className="w-4 h-4 shrink-0" />
+            Sign out
+          </button>
+        </SignOutButton>
       </div>
     </aside>
   )

@@ -136,6 +136,9 @@ export default async function CampaignDetailPage({ params }: Props) {
 
   const canAddLeads = !['complete'].includes(campaign.status)
 
+  // Count pending leads (newly added, no sequences yet) — shows Generate button on active campaigns
+  const pendingLeadCount = (allLeads ?? []).filter((l) => l.status === 'pending').length
+
   return (
     <div className="space-y-8">
       {/* Breadcrumb */}
@@ -168,8 +171,14 @@ export default async function CampaignDetailPage({ params }: Props) {
               channel={campaign.channel as 'email' | 'sms' | 'both'}
             />
           )}
-          {campaign.status === 'draft' && (
-            <GenerateButton campaignId={campaignId} clientId={clientId} leadCount={leads} />
+          {/* Generate — shown for draft, or for active/paused/ready when there are pending (new) leads */}
+          {(campaign.status === 'draft' || (pendingLeadCount > 0 && campaign.status !== 'complete')) && (
+            <GenerateButton
+              campaignId={campaignId}
+              clientId={clientId}
+              leadCount={campaign.status === 'draft' ? leads : pendingLeadCount}
+              label={campaign.status === 'draft' ? 'Generate sequences' : `Generate for ${pendingLeadCount} new lead${pendingLeadCount !== 1 ? 's' : ''}`}
+            />
           )}
           {campaign.status === 'ready' && (
             <Link href={`/admin/clients/${clientId}/campaigns/${campaignId}/preview`} className={cn(buttonVariants())}>

@@ -10,9 +10,10 @@ interface GenerateButtonProps {
   campaignId: string
   clientId: string
   leadCount: number
+  label?: string  // Custom label for "generate for new leads" use case
 }
 
-export function GenerateButton({ campaignId, clientId, leadCount }: GenerateButtonProps) {
+export function GenerateButton({ campaignId, clientId, leadCount, label }: GenerateButtonProps) {
   const router = useRouter()
   const [generating, setGenerating] = useState(false)
 
@@ -34,16 +35,22 @@ export function GenerateButton({ campaignId, clientId, leadCount }: GenerateButt
         return
       }
 
+      if (json.message && json.generated === 0) {
+        toast.success(json.message, { id: toastId })
+        router.refresh()
+        return
+      }
+
       if (json.failed > 0) {
         toast.warning(
-          `Generated ${json.generated} leads. ${json.failed} failed: ${json.failed_leads.slice(0, 3).join(', ')}${json.failed > 3 ? '…' : ''}`,
+          `Generated ${json.generated} leads. ${json.failed} failed: ${(json.failed_leads ?? []).slice(0, 3).join(', ')}${json.failed > 3 ? '…' : ''}`,
           { id: toastId }
         )
       } else {
-        toast.success(`All ${json.generated} sequences generated successfully.`, { id: toastId })
+        toast.success(`${json.generated} sequences generated successfully.`, { id: toastId })
       }
 
-      // Refresh and navigate to preview
+      // For draft campaigns, go to preview. For active campaigns, just refresh.
       router.push(`/admin/clients/${clientId}/campaigns/${campaignId}/preview`)
       router.refresh()
     } catch {
@@ -53,6 +60,8 @@ export function GenerateButton({ campaignId, clientId, leadCount }: GenerateButt
     }
   }
 
+  const defaultLabel = label ?? 'Generate sequences'
+
   return (
     <Button onClick={handleGenerate} disabled={generating}>
       {generating ? (
@@ -60,7 +69,7 @@ export function GenerateButton({ campaignId, clientId, leadCount }: GenerateButt
       ) : (
         <Zap className="w-4 h-4 mr-2" />
       )}
-      {generating ? 'Generating…' : 'Generate sequences'}
+      {generating ? 'Generating…' : defaultLabel}
     </Button>
   )
 }

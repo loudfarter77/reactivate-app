@@ -49,6 +49,26 @@ export async function POST(
       return NextResponse.json({ error: 'No leads found for this campaign' }, { status: 400 })
     }
 
+    // Skip leads that already have Email 1 generated — allows safe re-run for newly added leads
+    const { data: existingEmailLeads } = await supabase
+      .from('emails')
+      .select('lead_id')
+      .in('lead_id', leads.map((l) => l.id))
+      .eq('sequence_number', 1)
+
+    const alreadyGeneratedIds = new Set((existingEmailLeads ?? []).map((e) => e.lead_id))
+    const leadsToGenerate = leads.filter((l) => !alreadyGeneratedIds.has(l.id))
+
+    if (leadsToGenerate.length === 0) {
+      return NextResponse.json({
+        success: true,
+        generated: 0,
+        failed: 0,
+        status: campaign.status,
+        message: 'All leads already have sequences generated.',
+      })
+    }
+
     // The client business name comes from the joined clients record
     const clientName =
       (campaign.clients as { name: string } | null)?.name ?? 'the business'
@@ -59,8 +79,8 @@ export async function POST(
     const failedLeads: string[] = []
     let generatedCount = 0
 
-    // 4. Generate + insert sequences for each lead
-    for (const lead of leads) {
+    // 4. Generate + insert sequences for each lead (skipping those already generated)
+    for (const lead of leadsToGenerate) {
       try {
         const emailInserts: object[] = []
         const smsInserts: object[] = []
