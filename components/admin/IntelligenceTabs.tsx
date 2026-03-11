@@ -295,12 +295,12 @@ export function IntelligenceTabs({ data }: { data: IntelligenceData }) {
                 <div className="h-56">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={data.byTone} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(128,128,128,0.2)" />
                       <XAxis dataKey="tone" tick={{ fontSize: 12 }} />
                       <YAxis tick={{ fontSize: 12 }} unit="%" />
                       <Tooltip formatter={(v) => `${v}%`} />
-                      <Bar dataKey="avgOpenRate" name="Open rate" fill="hsl(var(--primary))" radius={[3, 3, 0, 0]} />
-                      <Bar dataKey="avgBookingRate" name="Booking rate" fill="hsl(var(--primary) / 0.4)" radius={[3, 3, 0, 0]} />
+                      <Bar dataKey="avgOpenRate" name="Open rate" fill="#6366f1" radius={[3, 3, 0, 0]} />
+                      <Bar dataKey="avgBookingRate" name="Booking rate" fill="#14b8a6" radius={[3, 3, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -347,12 +347,12 @@ export function IntelligenceTabs({ data }: { data: IntelligenceData }) {
                 <div className="h-48">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={data.byChannel} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(128,128,128,0.2)" />
                       <XAxis dataKey="channel" tick={{ fontSize: 12 }} />
                       <YAxis tick={{ fontSize: 12 }} unit="%" />
                       <Tooltip formatter={(v) => `${v}%`} />
-                      <Bar dataKey="avgBookingRate" name="Booking rate" fill="hsl(var(--primary))" radius={[3, 3, 0, 0]} />
-                      <Bar dataKey="avgCompletionRate" name="Completion rate" fill="hsl(var(--primary) / 0.4)" radius={[3, 3, 0, 0]} />
+                      <Bar dataKey="avgBookingRate" name="Booking rate" fill="#6366f1" radius={[3, 3, 0, 0]} />
+                      <Bar dataKey="avgCompletionRate" name="Completion rate" fill="#14b8a6" radius={[3, 3, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -400,12 +400,12 @@ export function IntelligenceTabs({ data }: { data: IntelligenceData }) {
                 <div className="h-56">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={data.byIndustry} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(128,128,128,0.2)" />
                       <XAxis dataKey="industry" tick={{ fontSize: 11 }} />
                       <YAxis tick={{ fontSize: 12 }} unit="%" />
                       <Tooltip formatter={(v) => `${v}%`} />
-                      <Bar dataKey="avgOpenRate" name="Open rate" fill="hsl(var(--primary))" radius={[3, 3, 0, 0]} />
-                      <Bar dataKey="avgBookingRate" name="Booking rate" fill="hsl(var(--primary) / 0.4)" radius={[3, 3, 0, 0]} />
+                      <Bar dataKey="avgOpenRate" name="Open rate" fill="#6366f1" radius={[3, 3, 0, 0]} />
+                      <Bar dataKey="avgBookingRate" name="Booking rate" fill="#14b8a6" radius={[3, 3, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -455,12 +455,12 @@ export function IntelligenceTabs({ data }: { data: IntelligenceData }) {
                       data={data.bySequence.map((r) => ({ ...r, label: `Email ${r.position}` }))}
                       margin={{ top: 0, right: 0, left: -20, bottom: 0 }}
                     >
-                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(128,128,128,0.2)" />
                       <XAxis dataKey="label" tick={{ fontSize: 12 }} />
                       <YAxis tick={{ fontSize: 12 }} unit="%" />
                       <Tooltip formatter={(v) => `${v}%`} />
-                      <Bar dataKey="openRate" name="Open rate" fill="hsl(var(--primary))" radius={[3, 3, 0, 0]} />
-                      <Bar dataKey="clickRate" name="Click rate" fill="hsl(var(--primary) / 0.4)" radius={[3, 3, 0, 0]} />
+                      <Bar dataKey="openRate" name="Open rate" fill="#6366f1" radius={[3, 3, 0, 0]} />
+                      <Bar dataKey="clickRate" name="Click rate" fill="#14b8a6" radius={[3, 3, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
