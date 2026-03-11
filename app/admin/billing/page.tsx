@@ -34,6 +34,14 @@ export default async function BillingPage() {
     .in('status', ['completed', 'disputed'])
     .order('completed_at', { ascending: false })
 
+  // Fetch open disputes so we can distinguish "active" disputed from "resolved-upheld"
+  const { data: openDisputes } = await supabase
+    .from('commission_disputes')
+    .select('booking_id')
+    .eq('status', 'open')
+
+  const openDisputeBookingIds = new Set((openDisputes ?? []).map((d) => d.booking_id))
+
   if (error) {
     return <div className="text-destructive text-sm">Failed to load billing data.</div>
   }
@@ -99,7 +107,9 @@ export default async function BillingPage() {
       leadName: lead?.name ?? 'Unknown',
     }
 
-    if (b.status === 'disputed') {
+    // Only show in disputed section if the dispute is still open
+    // Resolved/rejected disputes: upheld ones stay 'disputed' status but have no open dispute record
+    if (b.status === 'disputed' && openDisputeBookingIds.has(b.id)) {
       group.disputed.push(row)
     } else {
       group.completed.push(row)
