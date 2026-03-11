@@ -75,10 +75,10 @@ export function DashboardStats({
         tooltip="Percentage of all leads who have booked an appointment. Calculated as: leads booked ÷ total leads."
       />
       <StatCard
-        label="Completion rate"
-        value={pct(completedCount, bookedCount)}
-        sub={`${completedCount} jobs completed`}
-        tooltip="Percentage of booked appointments that were completed. Calculated as: jobs completed ÷ leads booked."
+        label="Jobs completed"
+        value={String(completedCount)}
+        sub={`${pct(completedCount, bookedCount)} completion rate`}
+        tooltip="Number of booked appointments that were completed."
       />
       <StatCard
         label="Total spend"

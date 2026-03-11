@@ -1,15 +1,35 @@
 'use client'
 
+import { useEffect, useCallback, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { SignOutButton } from '@clerk/nextjs'
-import { Zap, LogOut } from 'lucide-react'
+import { Zap, LogOut, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ThemeToggle } from '@/components/ui/ThemeToggle'
+
+const AUTO_REFRESH_MS = 60_000 // 60 seconds
 
 interface DashboardNavProps {
   clientName: string
 }
 
 export function DashboardNav({ clientName }: DashboardNavProps) {
+  const router = useRouter()
+  const [refreshing, setRefreshing] = useState(false)
+
+  const refresh = useCallback(() => {
+    setRefreshing(true)
+    router.refresh()
+    // Brief visual feedback — router.refresh() is near-instant
+    setTimeout(() => setRefreshing(false), 600)
+  }, [router])
+
+  // Auto-refresh every 60 seconds
+  useEffect(() => {
+    const id = setInterval(refresh, AUTO_REFRESH_MS)
+    return () => clearInterval(id)
+  }, [refresh])
+
   return (
     <header className="sticky top-0 z-40 border-b border-border bg-background/95 backdrop-blur">
       <div className="max-w-5xl mx-auto px-6 h-14 flex items-center justify-between gap-4">
@@ -22,6 +42,16 @@ export function DashboardNav({ clientName }: DashboardNavProps) {
           <span className="text-sm font-medium text-foreground">{clientName}</span>
         </div>
         <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground"
+            onClick={refresh}
+            disabled={refreshing}
+            title="Refresh dashboard"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+          </Button>
           <ThemeToggle />
           <SignOutButton redirectUrl="/sign-in">
             <Button variant="ghost" size="sm" className="text-muted-foreground">

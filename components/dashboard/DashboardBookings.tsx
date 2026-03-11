@@ -21,9 +21,16 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
-import { CheckCircle, AlertCircle, Loader2, Calendar } from 'lucide-react'
+import { AlertCircle, Loader2, Calendar } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const STATUS_BADGE: Record<string, { label: string; classes: string }> = {
@@ -40,14 +47,29 @@ interface DashboardBookingsProps {
 
 export function DashboardBookings({ bookings: initialBookings, disputesByBooking }: DashboardBookingsProps) {
   const [bookings, setBookings] = useState(initialBookings)
-  const [completing, setCompleting] = useState<string | null>(null)
+  const [working, setWorking] = useState<string | null>(null)
+  // Per-booking selected action — default "complete"
+  const [bookingActions, setBookingActions] = useState<Record<string, 'complete' | 'cancel'>>({})
   const [disputeTarget, setDisputeTarget] = useState<string | null>(null)
   const [disputeReason, setDisputeReason] = useState('')
   const [disputing, setDisputing] = useState(false)
   const [raisedDisputeIds, setRaisedDisputeIds] = useState<Set<string>>(new Set())
 
+  function getAction(bookingId: string): 'complete' | 'cancel' {
+    return bookingActions[bookingId] ?? 'complete'
+  }
+
+  async function handleApply(bookingId: string) {
+    const action = getAction(bookingId)
+    if (action === 'complete') {
+      await handleComplete(bookingId)
+    } else {
+      await handleCancel(bookingId)
+    }
+  }
+
   async function handleComplete(bookingId: string) {
-    setCompleting(bookingId)
+    setWorking(bookingId)
     try {
       const res = await fetch('/api/jobs/complete', {
         method: 'POST',
@@ -66,7 +88,27 @@ export function DashboardBookings({ bookings: initialBookings, disputesByBooking
     } catch {
       toast.error('Something went wrong')
     } finally {
-      setCompleting(null)
+      setWorking(null)
+    }
+  }
+
+  async function handleCancel(bookingId: string) {
+    setWorking(bookingId)
+    try {
+      const res = await fetch(`/api/bookings/${bookingId}/cancel`, { method: 'POST' })
+      const json = await res.json()
+      if (!res.ok) {
+        toast.error(json.error ?? 'Failed to cancel booking')
+        return
+      }
+      toast.success('Booking marked as cancelled')
+      setBookings((prev) =>
+        prev.map((b) => (b.id === bookingId ? { ...b, status: 'cancelled' } : b))
+      )
+    } catch {
+      toast.error('Something went wrong')
+    } finally {
+      setWorking(null)
     }
   }
 
@@ -116,14 +158,14 @@ export function DashboardBookings({ bookings: initialBookings, disputesByBooking
               <TableHead className="font-medium">Lead</TableHead>
               <TableHead className="font-medium">Date &amp; time</TableHead>
               <TableHead className="font-medium">Status</TableHead>
-              <TableHead className="w-48 font-medium">Manage</TableHead>
+              <TableHead className="w-56 font-medium">Manage</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {bookings.map((booking) => {
               const dispute = disputesByBooking[booking.id]
               const wasJustRaised = raisedDisputeIds.has(booking.id)
-              const isCompleting = completing === booking.id
+              const isWorking = working === booking.id
 
               let displayStatus: string
               let displayClass: string
@@ -141,7 +183,7 @@ export function DashboardBookings({ bookings: initialBookings, disputesByBooking
                 }
               } else {
                 const badge = STATUS_BADGE[booking.status] ?? { label: booking.status, classes: 'bg-muted text-muted-foreground' }
-                displayStatus = booking.status === 'completed' ? 'Completed' : badge.label
+                displayStatus = badge.label
                 displayClass = badge.classes
               }
 
@@ -162,37 +204,49 @@ export function DashboardBookings({ bookings: initialBookings, disputesByBooking
                     )}
                   </TableCell>
                   <TableCell>
-                    <div className="flex items-center gap-2">
-                      {booking.status === 'booked' && (
+                    {booking.status === 'booked' && (
+                      <div className="flex items-center gap-1.5">
+                        <Select
+                          value={getAction(booking.id)}
+                          onValueChange={(v: 'complete' | 'cancel') =>
+                            setBookingActions(prev => ({ ...prev, [booking.id]: v }))
+                          }
+                          disabled={isWorking}
+                        >
+                          <SelectTrigger className="h-7 text-xs w-40">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="complete">Mark complete</SelectItem>
+                            <SelectItem value="cancel">Booking cancelled</SelectItem>
+                          </SelectContent>
+                        </Select>
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => handleComplete(booking.id)}
-                          disabled={isCompleting}
+                          className="h-7 text-xs px-2.5"
+                          onClick={() => handleApply(booking.id)}
+                          disabled={isWorking}
                         >
-                          {isCompleting ? (
-                            <Loader2 className="w-3 h-3 mr-1.5 animate-spin" />
-                          ) : (
-                            <CheckCircle className="w-3 h-3 mr-1.5" />
-                          )}
-                          Mark complete
+                          {isWorking && <Loader2 className="w-3 h-3 mr-1 animate-spin" />}
+                          Apply
                         </Button>
-                      )}
-                      {booking.status === 'completed' && !dispute && !wasJustRaised && (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="text-muted-foreground text-xs"
-                          onClick={() => {
-                            setDisputeTarget(booking.id)
-                            setDisputeReason('')
-                          }}
-                        >
-                          <AlertCircle className="w-3 h-3 mr-1.5" />
-                          Raise dispute
-                        </Button>
-                      )}
-                    </div>
+                      </div>
+                    )}
+                    {booking.status === 'completed' && !dispute && !wasJustRaised && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-muted-foreground text-xs h-7"
+                        onClick={() => {
+                          setDisputeTarget(booking.id)
+                          setDisputeReason('')
+                        }}
+                      >
+                        <AlertCircle className="w-3 h-3 mr-1.5" />
+                        Raise dispute
+                      </Button>
+                    )}
                   </TableCell>
                 </TableRow>
               )

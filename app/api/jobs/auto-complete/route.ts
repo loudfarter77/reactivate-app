@@ -15,11 +15,8 @@ export async function POST(req: NextRequest) {
   }
 
   const supabase = getSupabaseClient()
-  const autoCompleteDays = parseInt(process.env.AUTO_COMPLETE_DAYS ?? '3', 10)
-
-  // Find bookings that are still "booked" but scheduled more than AUTO_COMPLETE_DAYS ago
+  // Find bookings that are still "booked" but whose appointment time has passed
   const cutoff = new Date()
-  cutoff.setDate(cutoff.getDate() - autoCompleteDays)
 
   const { data: bookings, error } = await supabase
     .from('bookings')
