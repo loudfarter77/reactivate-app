@@ -439,8 +439,8 @@ export function CampaignLeadList({
                   {/* Expanded: emails + event log */}
                   {isExpanded && (
                     <TableRow key={`${lead.id}-exp`}>
-                      <TableCell colSpan={7} className="bg-muted/5 p-0 max-w-0">
-                        <div className="px-6 py-4 space-y-4 w-full overflow-hidden">
+                      <TableCell colSpan={7} className="bg-muted/5 p-0">
+                        <div className="px-6 py-4 space-y-4">
                           {/* Emails */}
                           {(lead.emails ?? []).length > 0 && (
                             <div className="space-y-2">
@@ -453,7 +453,7 @@ export function CampaignLeadList({
                                   .map((email) => {
                                     const isEditing = editingEmail?.emailId === email.id
                                     return (
-                                      <div key={email.id} className="rounded-md border border-border bg-card p-3 space-y-1.5 min-w-0">
+                                      <div key={email.id} className="rounded-md border border-border bg-card p-3 space-y-1.5">
                                         <div className="flex items-center justify-between gap-2">
                                           <span className="text-xs font-medium text-muted-foreground">
                                             {SEQ_LABELS[email.sequence_number] ?? `Email ${email.sequence_number}`}
@@ -471,7 +471,7 @@ export function CampaignLeadList({
                                             {!email.sent_at && (
                                               <span className="text-muted-foreground/60">Not sent yet</span>
                                             )}
-                                            {canEditEmails && !isEditing && (
+                                            {canEditEmails && (
                                               <button
                                                 onClick={() => setEditingEmail({ emailId: email.id, subject: email.subject, body: email.body })}
                                                 className="flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors"
@@ -481,49 +481,10 @@ export function CampaignLeadList({
                                                 Edit
                                               </button>
                                             )}
-                                            {isEditing && (
-                                              <button
-                                                onClick={() => setEditingEmail(null)}
-                                                className="text-muted-foreground hover:text-foreground transition-colors"
-                                              >
-                                                Cancel
-                                              </button>
-                                            )}
                                           </div>
                                         </div>
-
-                                        {isEditing ? (
-                                          <div className="space-y-2 pt-1">
-                                            <input
-                                              type="text"
-                                              value={editingEmail!.subject}
-                                              onChange={(e) => setEditingEmail((prev) => prev ? { ...prev, subject: e.target.value } : prev)}
-                                              placeholder="Subject"
-                                              className="w-full px-2 py-1.5 text-sm rounded border border-border bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-                                            />
-                                            <textarea
-                                              value={editingEmail!.body}
-                                              onChange={(e) => setEditingEmail((prev) => prev ? { ...prev, body: e.target.value } : prev)}
-                                              rows={8}
-                                              placeholder="Body"
-                                              className="w-full px-2 py-1.5 text-xs rounded border border-border bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-y font-mono"
-                                            />
-                                            <div className="flex justify-end gap-2">
-                                              <Button variant="outline" size="sm" onClick={() => setEditingEmail(null)} disabled={savingEmail}>
-                                                Cancel
-                                              </Button>
-                                              <Button size="sm" onClick={handleSaveEmail} disabled={savingEmail}>
-                                                {savingEmail && <Loader2 className="w-3 h-3 mr-1.5 animate-spin" />}
-                                                Save
-                                              </Button>
-                                            </div>
-                                          </div>
-                                        ) : (
-                                          <>
-                                            <p className="text-sm font-medium text-foreground">{email.subject}</p>
-                                            <p className="text-xs text-muted-foreground whitespace-pre-wrap line-clamp-3">{email.body}</p>
-                                          </>
-                                        )}
+                                        <p className="text-sm font-medium text-foreground">{email.subject}</p>
+                                        <p className="text-xs text-muted-foreground whitespace-pre-wrap line-clamp-3">{email.body}</p>
                                       </div>
                                     )
                                   })}
@@ -594,6 +555,49 @@ export function CampaignLeadList({
             <Button variant="destructive" onClick={handleErase} disabled={erasing}>
               {erasing && <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />}
               Erase permanently
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Email edit dialog */}
+      <Dialog open={editingEmail !== null} onOpenChange={(open) => !open && setEditingEmail(null)}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Edit email</DialogTitle>
+            <DialogDescription>
+              Changes apply to this lead&apos;s unsent copy. Already-sent emails are unaffected.
+            </DialogDescription>
+          </DialogHeader>
+          {editingEmail && (
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Subject</label>
+                <input
+                  type="text"
+                  value={editingEmail.subject}
+                  onChange={(e) => setEditingEmail((prev) => prev ? { ...prev, subject: e.target.value } : prev)}
+                  className="w-full px-3 py-2 text-sm rounded-md border border-border bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Body</label>
+                <textarea
+                  value={editingEmail.body}
+                  onChange={(e) => setEditingEmail((prev) => prev ? { ...prev, body: e.target.value } : prev)}
+                  rows={14}
+                  className="w-full px-3 py-2 text-sm rounded-md border border-border bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-y font-mono"
+                />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingEmail(null)} disabled={savingEmail}>
+              Cancel
+            </Button>
+            <Button onClick={handleSaveEmail} disabled={savingEmail}>
+              {savingEmail && <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />}
+              Save changes
             </Button>
           </DialogFooter>
         </DialogContent>
