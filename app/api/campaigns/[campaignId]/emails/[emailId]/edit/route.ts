@@ -33,7 +33,7 @@ export async function PUT(
 
     const supabase = getSupabaseClient()
 
-    // 3. Verify campaign status is "ready" — editing only allowed pre-send
+    // 3. Verify campaign is in an editable state
     const { data: campaign, error: campaignError } = await supabase
       .from('campaigns')
       .select('status')
@@ -44,9 +44,10 @@ export async function PUT(
       return NextResponse.json({ error: 'Campaign not found' }, { status: 404 })
     }
 
-    if (campaign.status !== 'ready') {
+    const editableStatuses = ['ready', 'active', 'paused']
+    if (!editableStatuses.includes(campaign.status)) {
       return NextResponse.json(
-        { error: `Cannot edit emails on a campaign with status "${campaign.status}" — only "ready" campaigns are editable` },
+        { error: `Cannot edit emails on a "${campaign.status}" campaign` },
         { status: 400 }
       )
     }

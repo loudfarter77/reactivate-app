@@ -34,6 +34,8 @@ import {
   Bell,
   Mail,
   CheckCircle,
+  Search,
+  X,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -103,9 +105,22 @@ export function CampaignLeadList({
   const [togglingOptOut, setTogglingOptOut] = useState<string | null>(null)
   const [bulkDeleting, setBulkDeleting] = useState(false)
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false)
+  const [search, setSearch] = useState('')
+  const [editingEmail, setEditingEmail] = useState<{
+    emailId: string
+    subject: string
+    body: string
+  } | null>(null)
+  const [savingEmail, setSavingEmail] = useState(false)
 
   const canSendNext = campaignStatus === 'active' || campaignStatus === 'paused'
-  const allIds = leads.filter((l) => l.status !== 'deleted').map((l) => l.id)
+  const canEditEmails = ['ready', 'active', 'paused'].includes(campaignStatus)
+
+  const filteredLeads = search.trim()
+    ? leads.filter((l) => l.name.toLowerCase().includes(search.trim().toLowerCase()))
+    : leads
+
+  const allIds = filteredLeads.filter((l) => l.status !== 'deleted').map((l) => l.id)
   const allSelected = allIds.length > 0 && allIds.every((id) => selected.has(id))
 
   function toggleExpand(leadId: string) {
@@ -205,6 +220,37 @@ export function CampaignLeadList({
     finally { setSendingNext(null) }
   }
 
+  async function handleSaveEmail() {
+    if (!editingEmail) return
+    setSavingEmail(true)
+    try {
+      const res = await fetch(
+        `/api/campaigns/${campaignId}/emails/${editingEmail.emailId}/edit`,
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ subject: editingEmail.subject, body: editingEmail.body }),
+        }
+      )
+      const json = await res.json()
+      if (!res.ok) { toast.error(json.error ?? 'Save failed'); return }
+      toast.success('Email updated')
+      // Update email in local state
+      setLeads((prev) =>
+        prev.map((l) => ({
+          ...l,
+          emails: (l.emails ?? []).map((e) =>
+            e.id === editingEmail.emailId
+              ? { ...e, subject: editingEmail.subject, body: editingEmail.body }
+              : e
+          ),
+        }))
+      )
+      setEditingEmail(null)
+    } catch { toast.error('Something went wrong') }
+    finally { setSavingEmail(false) }
+  }
+
   return (
     <>
       {/* Bulk action bar */}
@@ -229,6 +275,31 @@ export function CampaignLeadList({
         </div>
       )}
 
+      {/* Search bar */}
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+        <input
+          type="text"
+          placeholder="Search leads by name…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="w-full pl-9 pr-8 py-2 text-sm rounded-md border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+        />
+        {search && (
+          <button
+            onClick={() => setSearch('')}
+            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        )}
+      </div>
+      {search && (
+        <p className="text-xs text-muted-foreground -mt-1">
+          {filteredLeads.length} of {leads.length} leads
+        </p>
+      )}
+
       <div className="rounded-lg border border-border overflow-hidden">
         <Table>
           <TableHeader>
@@ -251,7 +322,7 @@ export function CampaignLeadList({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {leads.map((lead) => {
+            {filteredLeads.map((lead) => {
               const isExpanded = expanded.has(lead.id)
               const isSelected = selected.has(lead.id)
               const isDeleted = lead.status === 'deleted'
@@ -379,31 +450,83 @@ export function CampaignLeadList({
                               <div className="grid gap-2">
                                 {(lead.emails ?? [])
                                   .sort((a, b) => a.sequence_number - b.sequence_number)
-                                  .map((email) => (
-                                    <div key={email.id} className="rounded-md border border-border bg-card p-3 space-y-1.5">
-                                      <div className="flex items-center justify-between gap-2">
-                                        <span className="text-xs font-medium text-muted-foreground">
-                                          {SEQ_LABELS[email.sequence_number] ?? `Email ${email.sequence_number}`}
-                                        </span>
-                                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                                          {email.sent_at && (
-                                            <span className="flex items-center gap-1 text-green-600 dark:text-green-400">
-                                              <CheckCircle className="w-3 h-3" />
-                                              Sent {format(parseISO(email.sent_at), 'dd MMM HH:mm')}
-                                            </span>
-                                          )}
-                                          {email.opened_at && (
-                                            <span className="text-blue-500">· Opened</span>
-                                          )}
-                                          {!email.sent_at && (
-                                            <span className="text-muted-foreground/60">Not sent</span>
-                                          )}
+                                  .map((email) => {
+                                    const isEditing = editingEmail?.emailId === email.id
+                                    return (
+                                      <div key={email.id} className="rounded-md border border-border bg-card p-3 space-y-1.5">
+                                        <div className="flex items-center justify-between gap-2">
+                                          <span className="text-xs font-medium text-muted-foreground">
+                                            {SEQ_LABELS[email.sequence_number] ?? `Email ${email.sequence_number}`}
+                                          </span>
+                                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                            {email.sent_at && (
+                                              <span className="flex items-center gap-1 text-green-600 dark:text-green-400">
+                                                <CheckCircle className="w-3 h-3" />
+                                                Sent {format(parseISO(email.sent_at), 'dd MMM HH:mm')}
+                                              </span>
+                                            )}
+                                            {email.opened_at && (
+                                              <span className="text-blue-500">· Opened</span>
+                                            )}
+                                            {!email.sent_at && (
+                                              <span className="text-muted-foreground/60">Not sent yet</span>
+                                            )}
+                                            {canEditEmails && !isEditing && (
+                                              <button
+                                                onClick={() => setEditingEmail({ emailId: email.id, subject: email.subject, body: email.body })}
+                                                className="flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors"
+                                                title="Edit this email"
+                                              >
+                                                <Pencil className="w-3 h-3" />
+                                                Edit
+                                              </button>
+                                            )}
+                                            {isEditing && (
+                                              <button
+                                                onClick={() => setEditingEmail(null)}
+                                                className="text-muted-foreground hover:text-foreground transition-colors"
+                                              >
+                                                Cancel
+                                              </button>
+                                            )}
+                                          </div>
                                         </div>
+
+                                        {isEditing ? (
+                                          <div className="space-y-2 pt-1">
+                                            <input
+                                              type="text"
+                                              value={editingEmail!.subject}
+                                              onChange={(e) => setEditingEmail((prev) => prev ? { ...prev, subject: e.target.value } : prev)}
+                                              placeholder="Subject"
+                                              className="w-full px-2 py-1.5 text-sm rounded border border-border bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                                            />
+                                            <textarea
+                                              value={editingEmail!.body}
+                                              onChange={(e) => setEditingEmail((prev) => prev ? { ...prev, body: e.target.value } : prev)}
+                                              rows={8}
+                                              placeholder="Body"
+                                              className="w-full px-2 py-1.5 text-xs rounded border border-border bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-y font-mono"
+                                            />
+                                            <div className="flex justify-end gap-2">
+                                              <Button variant="outline" size="sm" onClick={() => setEditingEmail(null)} disabled={savingEmail}>
+                                                Cancel
+                                              </Button>
+                                              <Button size="sm" onClick={handleSaveEmail} disabled={savingEmail}>
+                                                {savingEmail && <Loader2 className="w-3 h-3 mr-1.5 animate-spin" />}
+                                                Save
+                                              </Button>
+                                            </div>
+                                          </div>
+                                        ) : (
+                                          <>
+                                            <p className="text-sm font-medium text-foreground">{email.subject}</p>
+                                            <p className="text-xs text-muted-foreground whitespace-pre-wrap line-clamp-3">{email.body}</p>
+                                          </>
+                                        )}
                                       </div>
-                                      <p className="text-sm font-medium text-foreground">{email.subject}</p>
-                                      <p className="text-xs text-muted-foreground whitespace-pre-wrap line-clamp-3">{email.body}</p>
-                                    </div>
-                                  ))}
+                                    )
+                                  })}
                               </div>
                             </div>
                           )}
