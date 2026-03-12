@@ -439,8 +439,8 @@ export function CampaignLeadList({
                   {/* Expanded: emails + event log */}
                   {isExpanded && (
                     <TableRow key={`${lead.id}-exp`}>
-                      <TableCell colSpan={7} className="bg-muted/5 p-0">
-                        <div className="px-6 py-4 space-y-4">
+                      <TableCell colSpan={7} className="bg-muted/5 p-0 max-w-0">
+                        <div className="px-6 py-4 space-y-4 w-full overflow-hidden">
                           {/* Emails */}
                           {(lead.emails ?? []).length > 0 && (
                             <div className="space-y-2">
@@ -453,7 +453,7 @@ export function CampaignLeadList({
                                   .map((email) => {
                                     const isEditing = editingEmail?.emailId === email.id
                                     return (
-                                      <div key={email.id} className="rounded-md border border-border bg-card p-3 space-y-1.5">
+                                      <div key={email.id} className="rounded-md border border-border bg-card p-3 space-y-1.5 min-w-0">
                                         <div className="flex items-center justify-between gap-2">
                                           <span className="text-xs font-medium text-muted-foreground">
                                             {SEQ_LABELS[email.sequence_number] ?? `Email ${email.sequence_number}`}
