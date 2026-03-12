@@ -87,13 +87,14 @@ export async function POST(req: NextRequest) {
     const hasEmail = campaign.channel === 'email' || campaign.channel === 'both'
     const hasSms = campaign.channel === 'sms' || campaign.channel === 'both'
 
-    // Fetch leads eligible for follow-up
+    // Fetch leads eligible for follow-up or initial send
+    // pending: Email 1 / SMS 1 not yet sent (campaign activated, initial send timed out)
     // emailed/sms_sent: Email 2/3 or SMS 2/3; clicked: Email 4 / SMS 4
     const { data: leads } = await supabase
       .from('leads')
       .select('id, name, email, phone, booking_token, status, email_opt_out, sms_opt_out, send_failure_count')
       .eq('campaign_id', campaign.id)
-      .in('status', ['emailed', 'sms_sent', 'clicked'])
+      .in('status', ['pending', 'emailed', 'sms_sent', 'clicked'])
 
     if (!leads || leads.length === 0) continue
 
@@ -165,6 +166,14 @@ export async function POST(req: NextRequest) {
       let emailToSend: Email | undefined
       let sequenceNumber: number | undefined
 
+      // Pending leads: Email 1 / SMS 1 never sent (initial send timed out)
+      if (lead.status === 'pending') {
+        if (email1 && !email1.sent_at) {
+          emailToSend = email1
+          sequenceNumber = 1
+        }
+      }
+
       if (lead.status === 'emailed') {
         // Email 2: Email 1 sent > 3 days ago, Email 2 not sent yet
         if (email1?.sent_at && email2 && !email2.sent_at) {
@@ -229,6 +238,10 @@ export async function POST(req: NextRequest) {
             event_type: 'email_sent',
             description: `Email ${sequenceNumber} sent (follow-up cron)`,
           })
+          // Update pending leads to emailed so follow-up sequence picks them up correctly
+          if (lead.status === 'pending') {
+            await supabase.from('leads').update({ status: 'emailed' }).eq('id', lead.id)
+          }
           totalSent++
           remainingToday--
         } catch (err) {
